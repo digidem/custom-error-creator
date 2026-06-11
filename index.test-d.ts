@@ -386,6 +386,31 @@ expectError(
     },
   ]),
 );
+// Reserved even when `cause` hides behind an index signature
+expectError(
+  createErrorClass({
+    code: "WRAP",
+    message: (params: { cause: string } & Record<string, unknown>) =>
+      `Failed: ${params.cause}`,
+    status: 500,
+  }),
+);
+
+// Function message params must be an object — primitive params are rejected
+expectError(
+  createErrorClass({
+    code: "COUNT",
+    message: (n: number) => `Found ${n}`,
+    status: 500,
+  }),
+);
+expectError(
+  createErrorClass({
+    code: "NAMED",
+    message: (s: string) => `Name ${s}`,
+    status: 500,
+  }),
+);
 
 // Function messages through batch helpers
 const fnByCode = createErrorClassesByCode([

@@ -151,8 +151,8 @@ new Unauthorized("Custom message", { cause: underlyingError });
 ### Function messages
 
 When a `{param}` template isn't expressive enough, pass a function as the
-message. Its parameter type defines the typed params required by the
-constructor, and you control the formatting:
+message. Its parameter must be an object type, which defines the typed params
+required by the constructor, and you control the formatting:
 
 ```typescript
 const TooMany = createErrorClass({
@@ -167,6 +167,11 @@ new TooMany({ items: [1, 2, 3] });
 new TooMany({ items: [1, 2, 3] }, { cause: underlyingError });
 new TooMany({ items: "nope" }); // ❌ wrong param type, caught at compile time
 ```
+
+The parameter must be an object — `(n: number) => ...` is a compile-time error,
+since the constructor passes params as an object. Declare a required parameter
+(`(params: { … }) => …`) rather than a defaulted one (`(params = {}) => …`); a
+default makes the params optional at the type level.
 
 A zero-argument function behaves like an error without template parameters:
 

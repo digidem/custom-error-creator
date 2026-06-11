@@ -145,13 +145,6 @@ export function createErrorClass(definition) {
     validateMessage(code, defaultMessage);
   }
 
-  // This is inferred in TS, but for runtime checks the best we can do is check
-  // if the function expects at least one argument by checking its length
-  // property.
-  const hasTemplateParams = isFunctionMessage
-    ? defaultMessage.length >= 1
-    : /\{\w+\}/.test(defaultMessage);
-
   const ErrorKlass = class extends Error {
     code = code;
     status = status;
@@ -164,11 +157,14 @@ export function createErrorClass(definition) {
       let params, cause;
 
       if (typeof messageOrParams === "object" && messageOrParams !== null) {
-        if (!hasTemplateParams && "cause" in messageOrParams) {
-          // No-param error: first arg is ErrorOpts
-          cause = messageOrParams.cause;
+        // First arg is a params and/or { cause } object. `cause` is a reserved
+        // param name, so a cause key here is always the error's cause — which
+        // also lets us route params without relying on the message's arity.
+        if ("cause" in messageOrParams) {
+          const { cause: extractedCause, ...rest } = messageOrParams;
+          cause = extractedCause;
+          params = Object.keys(rest).length > 0 ? rest : undefined;
         } else {
-          // First arg is params object: new Err(params) or new Err(params, opts)
           params = messageOrParams;
           cause = paramsOrOpts?.cause;
         }
@@ -194,7 +190,14 @@ export function createErrorClass(definition) {
       if (customMessage !== undefined) {
         message = params ? interpolate(customMessage, params) : customMessage;
       } else if (isFunctionMessage) {
-        message = defaultMessage(params);
+        // The message function is user code; never let it abort construction of
+        // the error (which would mask the original failure). Pass an object even
+        // when params are absent, and fall back to the code if it throws.
+        try {
+          message = defaultMessage(params ?? {});
+        } catch {
+          message = code;
+        }
       } else {
         message = params ? interpolate(defaultMessage, params) : defaultMessage;
       }

@@ -871,6 +871,57 @@ describe("createErrorClass", () => {
       assert.equal(err.code, "NOT_FOUND");
       assert.equal(err.name, "NotFound");
     });
+
+    it("routes params regardless of function arity (default/rest params)", () => {
+      // .length is 0 for a default-valued param, but params must still reach the
+      // function — the old arity heuristic dropped them.
+      const Default = createErrorClass({
+        code: "X",
+        message: (params = {}) => `r=${params.resource}`,
+        status: 500,
+      });
+      const cause = new Error("root");
+      const err = new Default({ resource: "User", cause });
+      assert.equal(err.message, "r=User");
+      assert.equal(err.cause, cause);
+
+      const Rest = createErrorClass({
+        code: "Y",
+        message: (...args) => `r=${args[0]?.resource}`,
+        status: 500,
+      });
+      assert.equal(new Rest({ resource: "User" }).message, "r=User");
+    });
+
+    it("does not throw when required params are omitted", () => {
+      const E = createErrorClass({
+        code: "X",
+        message: (p) => `r=${p.resource}`,
+        status: 500,
+      });
+      let err;
+      assert.doesNotThrow(() => {
+        err = new E();
+      });
+      assert.equal(err.message, "r=undefined");
+    });
+
+    it("falls back to the code when the message function throws", () => {
+      const E = createErrorClass({
+        code: "BOOM",
+        message: () => {
+          throw new Error("fn blew up");
+        },
+        status: 500,
+      });
+      const cause = new Error("real");
+      let err;
+      assert.doesNotThrow(() => {
+        err = new E({ cause });
+      });
+      assert.equal(err.message, "BOOM");
+      assert.equal(err.cause, cause);
+    });
   });
 });
 

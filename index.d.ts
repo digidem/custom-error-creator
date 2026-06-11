@@ -10,11 +10,18 @@ type PascalFromScreamingSnake<T extends string> =
 
 type ForbiddenParamKeys = "cause";
 
+// Single source of truth for the compile-time hints surfaced on a definition's
+// `message` field, shared across the string and function paths.
+type ReservedCauseError =
+  "Error: message cannot use reserved parameter name 'cause'";
+type NonObjectParamsError =
+  "Error: function message params must be an object type";
+
 type ValidateMessage<T extends string> = string extends T
   ? T
   : ExtractParams<T> & ForbiddenParamKeys extends never
     ? T
-    : `Error: message template cannot use reserved parameter name 'cause'`;
+    : ReservedCauseError;
 
 type ParamsFor<T extends string> =
   ExtractParams<T> extends never
@@ -50,21 +57,50 @@ type MessageHasParams<TMessage> =
       ? HasParams<TMessage>
       : false;
 
+// The explicitly-declared keys of T, dropping any index signature. Lets us spot
+// an explicit `cause` member even when it coexists with `Record<string, …>`.
+type ExplicitKeys<T> = {
+  [K in keyof T as string extends K
+    ? never
+    : number extends K
+      ? never
+      : symbol extends K
+        ? never
+        : K]: T[K];
+};
+
 // True when a message uses the reserved `cause` parameter name — either as a
-// `{cause}` placeholder in a string template or as a key on a function message's
-// params. Reserving it for both keeps `cause` meaning only "the error's cause".
-// (Function params are erased at runtime, so for them this is compile-time only.)
+// `{cause}` placeholder in a string template or as an explicit key on a function
+// message's params. Reserving it for both keeps `cause` meaning only "the
+// error's cause". (Function params are erased at runtime, so for them this is
+// compile-time only.)
 type MessageUsesReservedKey<TMessage> = TMessage extends string
   ? ExtractParams<TMessage> & ForbiddenParamKeys extends never
     ? false
     : true
   : TMessage extends (params: infer P) => string
-    ? string extends keyof P
-      ? false // index-signature params — not an explicit `cause` key
-      : ForbiddenParamKeys extends keyof P
-        ? true
-        : false
+    ? ForbiddenParamKeys extends keyof ExplicitKeys<P>
+      ? true
+      : false
     : false;
+
+// True when a function message's params are not an object type (e.g. a primitive
+// like `(n: number) => string`), which the runtime cannot route as params.
+type MessageParamsInvalid<TMessage> = TMessage extends () => string
+  ? false
+  : TMessage extends (params: infer P) => string
+    ? P extends Record<string, unknown>
+      ? false
+      : true
+    : false;
+
+// The compile-time problem (if any) with a message, as a branded error string.
+type MessageProblem<TMessage> =
+  MessageUsesReservedKey<TMessage> extends true
+    ? ReservedCauseError
+    : MessageParamsInvalid<TMessage> extends true
+      ? NonObjectParamsError
+      : never;
 
 export type ErrorDefinition<
   TMessage extends string | MessageFn = string | MessageFn,
@@ -114,33 +150,33 @@ export type ErrorConstructor<Def extends ErrorDefinition> = (MessageHasParams<
   name: PascalFromScreamingSnake<Def["code"]>;
 };
 
-// The expected `message` type when a reserved key is used — a branded error
-// string. For string templates this flows through ValidateMessage; for function
+// The expected `message` type when a definition has a problem — a branded error
+// string. For string templates it flows through ValidateMessage; for function
 // messages (not assignable to a string) it surfaces the error on the field.
-type ReservedKeyMessage<TMessage> = TMessage extends string
+type ExpectedMessage<TMessage> = TMessage extends string
   ? ValidateMessage<TMessage>
-  : "Error: function message params cannot use reserved parameter name 'cause'";
+  : MessageProblem<TMessage>;
 
 type ValidateDefinition<Def extends ErrorDefinition> =
-  MessageUsesReservedKey<Def["message"]> extends true
-    ? "Error: message cannot use reserved parameter name 'cause'"
-    : ErrorConstructor<Def>;
+  [MessageProblem<Def["message"]>] extends [never]
+    ? ErrorConstructor<Def>
+    : MessageProblem<Def["message"]>;
 
 export function createErrorClass<const Def extends ErrorDefinition>(
-  def: MessageUsesReservedKey<Def["message"]> extends true
-    ? Omit<ErrorDefinition, "message"> & {
-        message: ReservedKeyMessage<Def["message"]>;
-      }
-    : Def,
+  def: [MessageProblem<Def["message"]>] extends [never]
+    ? Def
+    : Omit<ErrorDefinition, "message"> & {
+        message: ExpectedMessage<Def["message"]>;
+      },
 ): ValidateDefinition<Def>;
 
 type ValidateDefinitions<Defs extends ReadonlyArray<ErrorDefinition>> = {
   [K in keyof Defs]: Defs[K] extends ErrorDefinition
-    ? MessageUsesReservedKey<Defs[K]["message"]> extends true
-      ? Omit<ErrorDefinition, "message"> & {
-          message: ReservedKeyMessage<Defs[K]["message"]>;
+    ? [MessageProblem<Defs[K]["message"]>] extends [never]
+      ? Defs[K]
+      : Omit<ErrorDefinition, "message"> & {
+          message: ExpectedMessage<Defs[K]["message"]>;
         }
-      : Defs[K]
     : Defs[K];
 };
 
