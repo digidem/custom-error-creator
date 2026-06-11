@@ -301,3 +301,116 @@ new MixedParam({ name: "Alice", count: "many" });
 
 // Custom message with non-string params
 new NumParam("custom {val}", { val: 99 });
+
+// ──────────────────────────────────────────────
+// Function message — params inferred from the function signature
+// ──────────────────────────────────────────────
+
+const FnNotFound = createErrorClass({
+  code: "NOT_FOUND",
+  message: (params: { resource: string }) => `Resource ${params.resource} gone`,
+  status: 404,
+});
+
+// Params required and typed from the function's parameter
+const fn1 = new FnNotFound({ resource: "User" });
+expectType<"NOT_FOUND">(fn1.code);
+expectType<404>(fn1.status);
+expectType<"NotFound">(fn1.name);
+expectType<string>(fn1.message);
+expectAssignable<Error>(fn1);
+
+// Params with cause option
+new FnNotFound({ resource: "User" }, { cause: new Error() });
+
+// Custom message still allowed — params optional and untyped
+new FnNotFound("Custom message");
+new FnNotFound("{thing} gone", { thing: "Widget" });
+new FnNotFound("Gone", { cause: new Error() });
+
+// Missing params — should error
+expectError(new FnNotFound());
+// Wrong param name — should error
+expectError(new FnNotFound({ resorce: "User" }));
+// Extra param — should error
+expectError(new FnNotFound({ resource: "User", extra: 1 }));
+
+// Non-string param types are inferred from the function signature
+const FnCount = createErrorClass({
+  code: "TOO_MANY",
+  message: (params: { items: number[] }) => `Found ${params.items.length}`,
+  status: 500,
+});
+new FnCount({ items: [1, 2, 3] });
+// Wrong param type — should error
+expectError(new FnCount({ items: "nope" }));
+
+// Zero-arg function message behaves like a no-param error
+const FnSimple = createErrorClass({
+  code: "SIMPLE",
+  message: () => "Something failed",
+  status: 500,
+});
+const fnS = new FnSimple();
+expectType<"SIMPLE">(fnS.code);
+new FnSimple({ cause: new Error() });
+new FnSimple("Custom message");
+new FnSimple("Custom message", { cause: new Error() });
+// Object params should error for a no-param function message
+expectError(new FnSimple({ resource: "User" }));
+
+// `cause` is reserved for function message params too — error at definition time
+expectError(
+  createErrorClass({
+    code: "WRAP",
+    message: (params: { cause: string }) => `Failed: ${params.cause}`,
+    status: 500,
+  }),
+);
+// Including when mixed with other params
+expectError(
+  createErrorClass({
+    code: "WRAP",
+    message: (params: { resource: string; cause: unknown }) =>
+      `Failed: ${params.resource}`,
+    status: 500,
+  }),
+);
+// Also enforced through the batch helpers
+expectError(
+  createErrorClassesByCode([
+    {
+      code: "WRAP",
+      message: (params: { cause: string }) => `Failed: ${params.cause}`,
+      status: 500,
+    },
+  ]),
+);
+
+// Function messages through batch helpers
+const fnByCode = createErrorClassesByCode([
+  {
+    code: "NOT_FOUND",
+    message: (params: { resource: string }) => `Resource ${params.resource}`,
+    status: 404,
+  },
+  {
+    code: "UNAUTHORIZED",
+    message: () => "Access denied",
+    status: 401,
+  },
+]);
+const fbc1 = new fnByCode.NOT_FOUND({ resource: "User" });
+expectType<"NOT_FOUND">(fbc1.code);
+expectError(new fnByCode.NOT_FOUND());
+new fnByCode.UNAUTHORIZED();
+
+const fnByName = createErrorClassesByName([
+  {
+    code: "NOT_FOUND",
+    message: (params: { resource: string }) => `Resource ${params.resource}`,
+    status: 404,
+  },
+]);
+const fbn1 = new fnByName.NotFound({ resource: "User" });
+expectType<"NotFound">(fbn1.name);

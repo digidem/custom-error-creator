@@ -770,6 +770,108 @@ describe("createErrorClass", () => {
       );
     });
   });
+
+  describe("function message", () => {
+    it("calls the function with the params to build the message", () => {
+      const NotFound = createErrorClass({
+        code: "NOT_FOUND",
+        message: (params) => `Resource ${params.resource} not found`,
+        status: 404,
+      });
+      const err = new NotFound({ resource: "User" });
+      assert.equal(err.message, "Resource User not found");
+    });
+
+    it("gives the function full control over formatting non-string params", () => {
+      const Err = createErrorClass({
+        code: "TOO_MANY",
+        message: (params) => `Found ${params.items.length} items`,
+        status: 500,
+      });
+      const err = new Err({ items: [1, 2, 3] });
+      assert.equal(err.message, "Found 3 items");
+    });
+
+    it("passes the cause option alongside params", () => {
+      const NotFound = createErrorClass({
+        code: "NOT_FOUND",
+        message: (params) => `Resource ${params.resource} not found`,
+        status: 404,
+      });
+      const cause = new Error("db failed");
+      const err = new NotFound({ resource: "User" }, { cause });
+      assert.equal(err.message, "Resource User not found");
+      assert.equal(err.cause, cause);
+    });
+
+    it("treats a zero-arg function as a no-param error", () => {
+      const Unauthorized = createErrorClass({
+        code: "UNAUTHORIZED",
+        message: () => "Access denied",
+        status: 401,
+      });
+      const err = new Unauthorized();
+      assert.equal(err.message, "Access denied");
+    });
+
+    it("accepts { cause } as first arg for a zero-arg function message", () => {
+      const Unauthorized = createErrorClass({
+        code: "UNAUTHORIZED",
+        message: () => "Access denied",
+        status: 401,
+      });
+      const cause = new Error("token expired");
+      const err = new Unauthorized({ cause });
+      assert.equal(err.message, "Access denied");
+      assert.equal(err.cause, cause);
+    });
+
+    it("uses a custom string message instead of the function when provided", () => {
+      const NotFound = createErrorClass({
+        code: "NOT_FOUND",
+        message: (params) => `Resource ${params.resource} not found`,
+        status: 404,
+      });
+      const err = new NotFound("Custom message");
+      assert.equal(err.message, "Custom message");
+    });
+
+    it("interpolates a custom string message with params (template form)", () => {
+      const NotFound = createErrorClass({
+        code: "NOT_FOUND",
+        message: (params) => `Resource ${params.resource} not found`,
+        status: 404,
+      });
+      const err = new NotFound("{thing} is gone", { thing: "Widget" });
+      assert.equal(err.message, "Widget is gone");
+    });
+
+    it("does not throw on a function message at runtime (cause reservation is compile-time only)", () => {
+      // A `cause` param is rejected by the type checker, but function param
+      // types are erased at runtime so there is nothing to validate here.
+      assert.doesNotThrow(() =>
+        createErrorClass({
+          code: "WRAP",
+          message: (params) => `Failed because ${params.reason}`,
+          status: 500,
+        }),
+      );
+    });
+
+    it("works through createErrorClassesByCode", () => {
+      const errors = createErrorClassesByCode([
+        {
+          code: "NOT_FOUND",
+          message: (params) => `Resource ${params.resource} not found`,
+          status: 404,
+        },
+      ]);
+      const err = new errors.NOT_FOUND({ resource: "User" });
+      assert.equal(err.message, "Resource User not found");
+      assert.equal(err.code, "NOT_FOUND");
+      assert.equal(err.name, "NotFound");
+    });
+  });
 });
 
 describe("createErrorClassesByCode", () => {
