@@ -107,15 +107,36 @@ export type ErrorDefinition<
 > = {
   code: string;
   message: TMessage;
-  status: number;
+  status?: number;
 };
 
 type ErrorOpts = { cause?: unknown };
 
+// When a definition supplies a numeric `status`, instances carry it as a typed
+// property. When `status` is omitted the property is never set at runtime, so
+// it's absent from the type too — reading `.status` is a compile-time error.
+type StatusProp<Def extends ErrorDefinition> = Def extends {
+  status: infer S extends number;
+}
+  ? { status: S }
+  : {};
+
 type ErrorInstance<Def extends ErrorDefinition> = Error & {
   code: Def["code"];
-  status: Def["status"];
   name: PascalFromScreamingSnake<Def["code"]>;
+} & StatusProp<Def>;
+
+// A structured error produced by this module that carries an HTTP `status`.
+export type CustomError = Error & {
+  code: string;
+  name: string;
+  status: number;
+};
+
+// Any error carrying a string `code` — what `isErrorWithCode` narrows to. This
+// includes errors not produced by this module (e.g. Node's system errors).
+export type ErrorWithCode = Error & {
+  code: string;
 };
 
 export type ErrorConstructor<Def extends ErrorDefinition> = (MessageHasParams<
@@ -198,6 +219,10 @@ export function createErrorClassesByName<
   >]: ValidateDefinition<D>;
 };
 
-export function isCustomError(
-  error: unknown,
-): error is ErrorInstance<ErrorDefinition>;
+// Matches errors that carry a numeric `status` (definitions with a `status`).
+export function isCustomError(error: unknown): error is CustomError;
+
+// Matches any error with a string `code`. This duck-types on `code` alone, so
+// it also matches unrelated errors that carry one (e.g. Node's system errors).
+// Narrow further with `error.code` if you need to be specific.
+export function isErrorWithCode(error: unknown): error is ErrorWithCode;

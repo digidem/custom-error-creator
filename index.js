@@ -140,6 +140,7 @@ export function createErrorClass(definition) {
   const className = toPascalCase(code);
 
   const isFunctionMessage = typeof defaultMessage === "function";
+  const hasStatus = status !== undefined;
 
   if (!isFunctionMessage) {
     validateMessage(code, defaultMessage);
@@ -147,7 +148,6 @@ export function createErrorClass(definition) {
 
   const ErrorKlass = class extends Error {
     code = code;
-    status = status;
     name = className;
 
     constructor(messageOrParams, paramsOrOpts, opts) {
@@ -204,6 +204,8 @@ export function createErrorClass(definition) {
 
       super(message, cause !== undefined ? { cause } : undefined);
 
+      if (hasStatus) this.status = status;
+
       if (Error.captureStackTrace) {
         Error.captureStackTrace(this, this.constructor);
       }
@@ -238,4 +240,8 @@ export function isCustomError(error) {
     typeof error.code === "string" &&
     typeof error.status === "number"
   );
+}
+
+export function isErrorWithCode(error) {
+  return error instanceof Error && typeof error.code === "string";
 }

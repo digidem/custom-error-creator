@@ -2,6 +2,8 @@ import {
   createErrorClass,
   createErrorClassesByCode,
   createErrorClassesByName,
+  isCustomError,
+  isErrorWithCode,
 } from "./index.js";
 
 const errors = createErrorClassesByCode([
@@ -55,6 +57,26 @@ new TooMany({ items: [1, 2, 3] }); // ✅ params typed as { items: number[] }
 new TooMany({ items: [1, 2, 3] }, { cause: new Error() }); // ✅
 // @ts-expect-error Wrong param type — should error
 new TooMany({ items: "nope" }); // ❌
+
+// status is optional — omit it for errors without an HTTP status
+const ConfigError = createErrorClass({
+  code: "CONFIG_ERROR",
+  message: "Invalid config",
+});
+const configErr = new ConfigError();
+// @ts-expect-error No `status` property when the definition omits it
+configErr.status;
+
+// isCustomError checks code + numeric status
+declare const caught: unknown;
+if (isCustomError(caught)) {
+  caught.status; // number
+}
+
+// isErrorWithCode is a looser check against error.code alone
+if (isErrorWithCode(caught)) {
+  caught.code; // string — matches status-less errors and Node's system errors
+}
 
 // createErrorClassesByName — keyed by PascalCase name
 const byName = createErrorClassesByName([

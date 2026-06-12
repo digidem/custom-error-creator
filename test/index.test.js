@@ -5,6 +5,7 @@ import {
   createErrorClassesByCode,
   createErrorClassesByName,
   isCustomError,
+  isErrorWithCode,
 } from "../index.js";
 
 describe("createErrorClass", () => {
@@ -38,6 +39,38 @@ describe("createErrorClass", () => {
       });
       const err = new NotFound();
       assert.equal(err.status, 404);
+    });
+
+    it("does not set a status property when omitted from the definition", () => {
+      const NoStatus = createErrorClass({
+        code: "NO_STATUS",
+        message: "Something failed",
+      });
+      const err = new NoStatus();
+      assert.ok(!("status" in err));
+      assert.equal(err.status, undefined);
+      assert.equal(err.code, "NO_STATUS");
+      assert.equal(err.message, "Something failed");
+      assert.equal(err.name, "NoStatus");
+    });
+
+    it("does not set a status property when the definition passes status: undefined", () => {
+      const NoStatus = createErrorClass({
+        code: "NO_STATUS",
+        message: "Something failed",
+        status: undefined,
+      });
+      assert.ok(!("status" in new NoStatus()));
+    });
+
+    it("interpolates params even when status is omitted", () => {
+      const NoStatus = createErrorClass({
+        code: "NO_STATUS",
+        message: "Resource {resource} not found",
+      });
+      const err = new NoStatus({ resource: "User" });
+      assert.equal(err.message, "Resource User not found");
+      assert.ok(!("status" in err));
     });
 
     it("converts SCREAMING_SNAKE_CASE code to PascalCase name", () => {
@@ -1082,5 +1115,56 @@ describe("isCustomError", () => {
     err.code = "MANUAL";
     err.status = 500;
     assert.ok(isCustomError(err));
+  });
+
+  it("returns false for an error created without a status", () => {
+    const Err = createErrorClass({ code: "NO_STATUS", message: "msg" });
+    assert.ok(!isCustomError(new Err()));
+  });
+});
+
+describe("isErrorWithCode", () => {
+  it("returns true for an error created with a status", () => {
+    const Err = createErrorClass({
+      code: "WITH_STATUS",
+      message: "msg",
+      status: 500,
+    });
+    assert.ok(isErrorWithCode(new Err()));
+  });
+
+  it("returns true for an error created without a status", () => {
+    const Err = createErrorClass({ code: "NO_STATUS", message: "msg" });
+    assert.ok(isErrorWithCode(new Err()));
+  });
+
+  it("returns false for plain Error instances", () => {
+    assert.ok(!isErrorWithCode(new Error("plain")));
+  });
+
+  it("returns false for non-error objects", () => {
+    assert.ok(!isErrorWithCode({ code: "TEST" }));
+  });
+
+  it("returns false for null and undefined", () => {
+    assert.ok(!isErrorWithCode(null));
+    assert.ok(!isErrorWithCode(undefined));
+  });
+
+  it("returns true for any error with a string code, regardless of status (duck-typing)", () => {
+    const noStatus = new Error("manual");
+    noStatus.code = "MANUAL";
+    assert.ok(isErrorWithCode(noStatus));
+
+    const nodeStyle = new Error("fs");
+    nodeStyle.code = "ENOENT";
+    assert.ok(isErrorWithCode(nodeStyle));
+  });
+
+  it("is a looser check than isCustomError (ignores status)", () => {
+    const withoutStatus = new Error("b");
+    withoutStatus.code = "B";
+    assert.ok(!isCustomError(withoutStatus));
+    assert.ok(isErrorWithCode(withoutStatus));
   });
 });
