@@ -1,6 +1,6 @@
 {
   "name": "custom-error-creator",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Create typed, structured error classes from simple definitions.",
   "exports": {
     ".": {
