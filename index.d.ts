@@ -10,11 +10,18 @@ type PascalFromScreamingSnake<T extends string> =
 
 type ForbiddenParamKeys = "cause";
 
+// Single source of truth for the compile-time hints surfaced on a definition's
+// `message` field, shared across the string and function paths.
+type ReservedCauseError =
+  "Error: message cannot use reserved parameter name 'cause'";
+type NonObjectParamsError =
+  "Error: function message params must be an object type";
+
 type ValidateMessage<T extends string> = string extends T
   ? T
   : ExtractParams<T> & ForbiddenParamKeys extends never
     ? T
-    : `Error: message template cannot use reserved parameter name 'cause'`;
+    : ReservedCauseError;
 
 type ParamsFor<T extends string> =
   ExtractParams<T> extends never
@@ -26,7 +33,78 @@ type ParamsFor<T extends string> =
 type HasParams<T extends string> =
   ExtractParams<T> extends never ? false : true;
 
-export type ErrorDefinition<TMessage extends string = string> = {
+// A message can be a static template string or a function that receives the
+// (typed) params object and returns the message string.
+type MessageFn = (params: any) => string;
+
+// Params accepted by an error's default constructor, derived from the message:
+// inferred from the function's first parameter, or extracted from a template.
+type MessageParams<TMessage> =
+  TMessage extends (params: infer P) => string
+    ? P
+    : TMessage extends string
+      ? ParamsFor<TMessage>
+      : never;
+
+// Whether the default message requires a params object. A zero-arg (or
+// optional-arg) function message behaves like a no-param error.
+type MessageHasParams<TMessage> =
+  TMessage extends MessageFn
+    ? TMessage extends () => string
+      ? false
+      : true
+    : TMessage extends string
+      ? HasParams<TMessage>
+      : false;
+
+// The explicitly-declared keys of T, dropping any index signature. Lets us spot
+// an explicit `cause` member even when it coexists with `Record<string, …>`.
+type ExplicitKeys<T> = {
+  [K in keyof T as string extends K
+    ? never
+    : number extends K
+      ? never
+      : symbol extends K
+        ? never
+        : K]: T[K];
+};
+
+// True when a message uses the reserved `cause` parameter name — either as a
+// `{cause}` placeholder in a string template or as an explicit key on a function
+// message's params. Reserving it for both keeps `cause` meaning only "the
+// error's cause". (Function params are erased at runtime, so for them this is
+// compile-time only.)
+type MessageUsesReservedKey<TMessage> = TMessage extends string
+  ? ExtractParams<TMessage> & ForbiddenParamKeys extends never
+    ? false
+    : true
+  : TMessage extends (params: infer P) => string
+    ? ForbiddenParamKeys extends keyof ExplicitKeys<P>
+      ? true
+      : false
+    : false;
+
+// True when a function message's params are not an object type (e.g. a primitive
+// like `(n: number) => string`), which the runtime cannot route as params.
+type MessageParamsInvalid<TMessage> = TMessage extends () => string
+  ? false
+  : TMessage extends (params: infer P) => string
+    ? P extends Record<string, unknown>
+      ? false
+      : true
+    : false;
+
+// The compile-time problem (if any) with a message, as a branded error string.
+type MessageProblem<TMessage> =
+  MessageUsesReservedKey<TMessage> extends true
+    ? ReservedCauseError
+    : MessageParamsInvalid<TMessage> extends true
+      ? NonObjectParamsError
+      : never;
+
+export type ErrorDefinition<
+  TMessage extends string | MessageFn = string | MessageFn,
+> = {
   code: string;
   message: TMessage;
   status: number;
@@ -40,14 +118,14 @@ type ErrorInstance<Def extends ErrorDefinition> = Error & {
   name: PascalFromScreamingSnake<Def["code"]>;
 };
 
-export type ErrorConstructor<Def extends ErrorDefinition> = (HasParams<
+export type ErrorConstructor<Def extends ErrorDefinition> = (MessageHasParams<
   Def["message"]
 > extends true
   ? {
       // Default message — params required
-      new (params: ParamsFor<Def["message"]>): ErrorInstance<Def>;
+      new (params: MessageParams<Def["message"]>): ErrorInstance<Def>;
       new (
-        params: ParamsFor<Def["message"]>,
+        params: MessageParams<Def["message"]>,
         opts: ErrorOpts,
       ): ErrorInstance<Def>;
       // Custom message — params optional
@@ -72,24 +150,33 @@ export type ErrorConstructor<Def extends ErrorDefinition> = (HasParams<
   name: PascalFromScreamingSnake<Def["code"]>;
 };
 
-type ValidateDefinition<Def extends ErrorDefinition> = ExtractParams<
-  Def["message"]
-> &
-  ForbiddenParamKeys extends never
-  ? ErrorConstructor<Def>
-  : "Error: message template cannot use reserved parameter name 'cause'";
+// The expected `message` type when a definition has a problem — a branded error
+// string. For string templates it flows through ValidateMessage; for function
+// messages (not assignable to a string) it surfaces the error on the field.
+type ExpectedMessage<TMessage> = TMessage extends string
+  ? ValidateMessage<TMessage>
+  : MessageProblem<TMessage>;
+
+type ValidateDefinition<Def extends ErrorDefinition> =
+  [MessageProblem<Def["message"]>] extends [never]
+    ? ErrorConstructor<Def>
+    : MessageProblem<Def["message"]>;
 
 export function createErrorClass<const Def extends ErrorDefinition>(
-  def: ExtractParams<Def["message"]> & ForbiddenParamKeys extends never
+  def: [MessageProblem<Def["message"]>] extends [never]
     ? Def
-    : ErrorDefinition & { message: ValidateMessage<Def["message"]> },
+    : Omit<ErrorDefinition, "message"> & {
+        message: ExpectedMessage<Def["message"]>;
+      },
 ): ValidateDefinition<Def>;
 
 type ValidateDefinitions<Defs extends ReadonlyArray<ErrorDefinition>> = {
   [K in keyof Defs]: Defs[K] extends ErrorDefinition
-    ? ExtractParams<Defs[K]["message"]> & ForbiddenParamKeys extends never
+    ? [MessageProblem<Defs[K]["message"]>] extends [never]
       ? Defs[K]
-      : ErrorDefinition & { message: ValidateMessage<Defs[K]["message"]> }
+      : Omit<ErrorDefinition, "message"> & {
+          message: ExpectedMessage<Defs[K]["message"]>;
+        }
     : Defs[K];
 };
 

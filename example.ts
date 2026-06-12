@@ -44,6 +44,18 @@ e.status; // 404
 e.message; // string
 e.cause; // unknown
 
+// Function message — params are inferred from the function signature
+const TooMany = createErrorClass({
+  code: "TOO_MANY_ITEMS",
+  message: (params: { items: number[] }) =>
+    `Found ${params.items.length} items, expected fewer`,
+  status: 400,
+});
+new TooMany({ items: [1, 2, 3] }); // ✅ params typed as { items: number[] }
+new TooMany({ items: [1, 2, 3] }, { cause: new Error() }); // ✅
+// @ts-expect-error Wrong param type — should error
+new TooMany({ items: "nope" }); // ❌
+
 // createErrorClassesByName — keyed by PascalCase name
 const byName = createErrorClassesByName([
   {

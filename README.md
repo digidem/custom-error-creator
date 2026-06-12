@@ -148,6 +148,54 @@ new Unauthorized("Custom message");
 new Unauthorized("Custom message", { cause: underlyingError });
 ```
 
+### Function messages
+
+When a `{param}` template isn't expressive enough, pass a function as the
+message. Its parameter must be an object type, which defines the typed params
+required by the constructor, and you control the formatting:
+
+```typescript
+const TooMany = createErrorClass({
+  code: "TOO_MANY_ITEMS",
+  message: (params: { items: number[] }) =>
+    `Found ${params.items.length} items, expected fewer`,
+  status: 400,
+});
+
+// Params required — typed as { items: number[] } from the function signature
+new TooMany({ items: [1, 2, 3] });
+new TooMany({ items: [1, 2, 3] }, { cause: underlyingError });
+new TooMany({ items: "nope" }); // ❌ wrong param type, caught at compile time
+```
+
+The parameter must be an object — `(n: number) => ...` is a compile-time error,
+since the constructor passes params as an object. Declare a required parameter
+(`(params: { … }) => …`) rather than a defaulted one (`(params = {}) => …`); a
+default makes the params optional at the type level.
+
+A zero-argument function behaves like an error without template parameters:
+
+```typescript
+const Unauthorized = createErrorClass({
+  code: "UNAUTHORIZED",
+  message: () => "Access denied",
+  status: 401,
+});
+
+new Unauthorized();
+```
+
+The optional custom message passed to the constructor is always a plain string
+(`new TooMany("Custom message")`) — the function only produces the default
+message.
+
+As with `{param}` templates, `cause` is a reserved parameter name: a function
+message whose params include a `cause` key is a compile-time error. This keeps
+`cause` meaning only "the error's cause" (passed as the second constructor
+argument), with no shadowing. Because a function's parameter types are erased at
+runtime, this is enforced at compile time only — unlike the `{cause}` template
+check, which also throws at runtime.
+
 ## Error instance properties
 
 Every error instance has the standard `Error` properties plus:
@@ -223,18 +271,26 @@ compatible with all standard tooling.
 
 ## Reserved parameter names
 
-The parameter name `cause` is reserved and cannot be used in message templates.
-This is enforced at both compile time and runtime:
+The parameter name `cause` is reserved and cannot be used as a message
+parameter, so it only ever refers to the error's `cause` (the second constructor
+argument). For string templates this is enforced at both compile time and
+runtime; for function messages, whose param types are erased at runtime, it is
+enforced at compile time only.
 
 ```typescript
-// ❌ Compile error at definition time
+// ❌ Compile error at definition time + runtime throw
 const Bad = createErrorClass({
   code: "BAD",
   message: "Failed because {cause}",
   status: 500,
 });
 
-// ❌ Runtime error — throws immediately
+// ❌ Compile error at definition time (function params)
+const AlsoBad = createErrorClass({
+  code: "BAD",
+  message: (params: { cause: string }) => `Failed because ${params.cause}`,
+  status: 500,
+});
 ```
 
 ## Type safety

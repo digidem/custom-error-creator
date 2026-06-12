@@ -49,9 +49,7 @@ function _inspect(value, depth, seen) {
       result = "[]";
     } else {
       const items = _truncated(
-        value
-          .slice(0, MAX_ITEMS)
-          .map((v) => _inspect(v, depth - 1, seen)),
+        value.slice(0, MAX_ITEMS).map((v) => _inspect(v, depth - 1, seen)),
         value.length,
       );
       result = `[ ${items.join(", ")} ]`;
@@ -141,9 +139,11 @@ export function createErrorClass(definition) {
   const { code, message: defaultMessage, status } = definition;
   const className = toPascalCase(code);
 
-  validateMessage(code, defaultMessage);
+  const isFunctionMessage = typeof defaultMessage === "function";
 
-  const hasTemplateParams = /\{\w+\}/.test(defaultMessage);
+  if (!isFunctionMessage) {
+    validateMessage(code, defaultMessage);
+  }
 
   const ErrorKlass = class extends Error {
     code = code;
@@ -151,17 +151,20 @@ export function createErrorClass(definition) {
     name = className;
 
     constructor(messageOrParams, paramsOrOpts, opts) {
-      const message =
-        typeof messageOrParams === "string" ? messageOrParams : defaultMessage;
+      const customMessage =
+        typeof messageOrParams === "string" ? messageOrParams : undefined;
 
       let params, cause;
 
       if (typeof messageOrParams === "object" && messageOrParams !== null) {
-        if (!hasTemplateParams && "cause" in messageOrParams) {
-          // No-param error: first arg is ErrorOpts
-          cause = messageOrParams.cause;
+        // First arg is a params and/or { cause } object. `cause` is a reserved
+        // param name, so a cause key here is always the error's cause — which
+        // also lets us route params without relying on the message's arity.
+        if ("cause" in messageOrParams) {
+          const { cause: extractedCause, ...rest } = messageOrParams;
+          cause = extractedCause;
+          params = Object.keys(rest).length > 0 ? rest : undefined;
         } else {
-          // First arg is params object: new Err(params) or new Err(params, opts)
           params = messageOrParams;
           cause = paramsOrOpts?.cause;
         }
@@ -181,10 +184,25 @@ export function createErrorClass(definition) {
         }
       }
 
-      super(
-        params ? interpolate(message, params) : message,
-        cause !== undefined ? { cause } : undefined,
-      );
+      // A custom message string always uses template interpolation; the
+      // function form only ever produces the default message.
+      let message;
+      if (customMessage !== undefined) {
+        message = params ? interpolate(customMessage, params) : customMessage;
+      } else if (isFunctionMessage) {
+        // The message function is user code; never let it abort construction of
+        // the error (which would mask the original failure). Pass an object even
+        // when params are absent, and fall back to the code if it throws.
+        try {
+          message = defaultMessage(params ?? {});
+        } catch {
+          message = code;
+        }
+      } else {
+        message = params ? interpolate(defaultMessage, params) : defaultMessage;
+      }
+
+      super(message, cause !== undefined ? { cause } : undefined);
 
       if (Error.captureStackTrace) {
         Error.captureStackTrace(this, this.constructor);
