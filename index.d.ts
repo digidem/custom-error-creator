@@ -37,25 +37,37 @@ type HasParams<T extends string> =
 // (typed) params object and returns the message string.
 type MessageFn = (params: any) => string;
 
+// The function message's declared params. For an optional parameter this
+// includes `undefined`; for a zero-arg function it infers as `unknown`.
+type InferredParams<TMessage> = TMessage extends (params: infer P) => string
+  ? P
+  : never;
+
 // Params accepted by an error's default constructor, derived from the message:
-// inferred from the function's first parameter, or extracted from a template.
+// inferred from the function's first parameter (sans the `undefined` an
+// optional parameter adds), or extracted from a template.
 type MessageParams<TMessage> =
   TMessage extends (params: infer P) => string
-    ? P
+    ? NonNullable<P>
     : TMessage extends string
       ? ParamsFor<TMessage>
       : never;
 
-// Whether the default message requires a params object. A zero-arg (or
-// optional-arg) function message behaves like a no-param error.
-type MessageHasParams<TMessage> =
+// How the default constructor treats params. A function with an optional
+// parameter (e.g. `(params: {...} = {}) => ...`) makes them optional; a
+// zero-arg function behaves like a no-param error.
+type MessageParamsKind<TMessage> =
   TMessage extends MessageFn
     ? TMessage extends () => string
-      ? false
-      : true
+      ? unknown extends InferredParams<TMessage>
+        ? "none" // truly zero-arg: infer slot stays unknown
+        : "optional"
+      : "required"
     : TMessage extends string
-      ? HasParams<TMessage>
-      : false;
+      ? HasParams<TMessage> extends true
+        ? "required"
+        : "none"
+      : "none";
 
 // The explicitly-declared keys of T, dropping any index signature. Lets us spot
 // an explicit `cause` member even when it coexists with `Record<string, …>`.
@@ -79,19 +91,23 @@ type MessageUsesReservedKey<TMessage> = TMessage extends string
     ? false
     : true
   : TMessage extends (params: infer P) => string
-    ? ForbiddenParamKeys extends keyof ExplicitKeys<P>
+    ? // NonNullable: an optional parameter adds `| undefined`, which would
+      // empty `keyof` and hide an explicit `cause` member.
+      ForbiddenParamKeys extends keyof ExplicitKeys<NonNullable<P>>
       ? true
       : false
     : false;
 
 // True when a function message's params are not an object type (e.g. a primitive
 // like `(n: number) => string`), which the runtime cannot route as params.
-type MessageParamsInvalid<TMessage> = TMessage extends () => string
-  ? false
-  : TMessage extends (params: infer P) => string
-    ? P extends Record<string, unknown>
+// Optional params are checked too — only the zero-arg case (P = unknown) skips.
+type MessageParamsInvalid<TMessage> =
+  TMessage extends (params: infer P) => string
+    ? unknown extends P
       ? false
-      : true
+      : NonNullable<P> extends Record<string, unknown>
+        ? false
+        : true
     : false;
 
 // The compile-time problem (if any) with a message, as a branded error string.
@@ -139,9 +155,9 @@ export type ErrorWithCode = Error & {
   code: string;
 };
 
-export type ErrorConstructor<Def extends ErrorDefinition> = (MessageHasParams<
+export type ErrorConstructor<Def extends ErrorDefinition> = (MessageParamsKind<
   Def["message"]
-> extends true
+> extends "required"
   ? {
       // Default message — params required
       new (params: MessageParams<Def["message"]>): ErrorInstance<Def>;
@@ -161,12 +177,33 @@ export type ErrorConstructor<Def extends ErrorDefinition> = (MessageHasParams<
       ): ErrorInstance<Def>;
       new (message: string | undefined, opts: ErrorOpts): ErrorInstance<Def>;
     }
-  : {
-      new (): ErrorInstance<Def>;
-      new (opts: ErrorOpts): ErrorInstance<Def>;
-      new (message: string): ErrorInstance<Def>;
-      new (message: string | undefined, opts: ErrorOpts): ErrorInstance<Def>;
-    }) & {
+  : MessageParamsKind<Def["message"]> extends "optional"
+    ? {
+        // Default message — params optional
+        new (params?: MessageParams<Def["message"]>): ErrorInstance<Def>;
+        new (
+          params: MessageParams<Def["message"]>,
+          opts: ErrorOpts,
+        ): ErrorInstance<Def>;
+        new (opts: ErrorOpts): ErrorInstance<Def>;
+        // Custom message — params optional
+        new (
+          message: string,
+          params?: Record<string, unknown>,
+        ): ErrorInstance<Def>;
+        new (
+          message: string,
+          params: Record<string, unknown>,
+          opts: ErrorOpts,
+        ): ErrorInstance<Def>;
+        new (message: string | undefined, opts: ErrorOpts): ErrorInstance<Def>;
+      }
+    : {
+        new (): ErrorInstance<Def>;
+        new (opts: ErrorOpts): ErrorInstance<Def>;
+        new (message: string): ErrorInstance<Def>;
+        new (message: string | undefined, opts: ErrorOpts): ErrorInstance<Def>;
+      }) & {
   code: Def["code"];
   name: PascalFromScreamingSnake<Def["code"]>;
 };

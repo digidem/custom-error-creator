@@ -196,9 +196,24 @@ new TooMany({ items: "nope" }); // ❌ wrong param type, caught at compile time
 ```
 
 The parameter must be an object — `(n: number) => ...` is a compile-time error,
-since the constructor passes params as an object. Declare a required parameter
-(`(params: { … }) => …`) rather than a defaulted one (`(params = {}) => …`); a
-default makes the params optional at the type level.
+since the constructor passes params as an object.
+
+Declaring the parameter as optional (or giving it a default) makes params
+optional in the constructor too. The function is always called with an object
+(`{}` when no params are passed), so a default like `= {}` works as expected:
+
+```typescript
+const DocError = createErrorClass({
+  code: "DOC_ERROR",
+  message: ({ docType }: { docType?: string } = {}) =>
+    docType ? `${docType} error` : "other error message",
+  status: 400,
+});
+
+new DocError(); // "other error message"
+new DocError({ docType: "observation" }); // "observation error"
+new DocError({ cause: underlyingError }); // cause without params
+```
 
 A zero-argument function behaves like an error without template parameters:
 

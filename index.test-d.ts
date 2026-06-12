@@ -414,6 +414,56 @@ new FnCount({ items: [1, 2, 3] });
 // Wrong param type — should error
 expectError(new FnCount({ items: "nope" }));
 
+// Optional-param function message — params optional in the constructor
+const FnOptional = createErrorClass({
+  code: "DOC_ERROR",
+  message: ({ docType }: { docType?: string } = {}) =>
+    docType ? `${docType} error` : "other error message",
+  status: 400,
+});
+const fnO = new FnOptional();
+expectType<"DOC_ERROR">(fnO.code);
+expectType<"DocError">(fnO.name);
+expectType<400>(fnO.status);
+new FnOptional({});
+new FnOptional({ docType: "observation" });
+new FnOptional({ docType: "observation" }, { cause: new Error() });
+new FnOptional({ cause: new Error() });
+new FnOptional("Custom message");
+new FnOptional("Custom message", { cause: new Error() });
+// Wrong param name — should error
+expectError(new FnOptional({ docTpye: "observation" }));
+// Wrong param type — should error
+expectError(new FnOptional({ docType: 42 }));
+
+// Explicit optional parameter (no default) works the same
+const FnOptionalParam = createErrorClass({
+  code: "OPT_COUNT",
+  message: (params?: { count?: number }) => `Count: ${params?.count ?? 0}`,
+  status: 500,
+});
+new FnOptionalParam();
+new FnOptionalParam({ count: 2 });
+expectError(new FnOptionalParam({ count: "two" }));
+
+// Reserved `cause` param is still rejected when the parameter is optional
+expectError(
+  createErrorClass({
+    code: "WRAP",
+    message: ({ cause }: { cause?: string } = {}) => `Failed: ${cause}`,
+    status: 500,
+  }),
+);
+
+// Optional primitive params are rejected like required ones
+expectError(
+  createErrorClass({
+    code: "COUNT",
+    message: (n?: number) => `Found ${n ?? 0}`,
+    status: 500,
+  }),
+);
+
 // Zero-arg function message behaves like a no-param error
 const FnSimple = createErrorClass({
   code: "SIMPLE",
