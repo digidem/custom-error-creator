@@ -4,7 +4,10 @@ import {
   createErrorClassesByCode,
   createErrorClassesByName,
   isCustomError,
+  isErrorWithCode,
   type ErrorDefinition,
+  type CustomError,
+  type ErrorWithCode,
 } from "./index.js";
 
 // ──────────────────────────────────────────────
@@ -40,6 +43,64 @@ expectError(new NotFound());
 expectError(new NotFound({ resorce: "User" }));
 // Empty params — should error
 expectError(new NotFound({}));
+
+// Provided status is inferred as the literal number
+expectType<404>(new NotFound({ resource: "User" }).status);
+
+// ──────────────────────────────────────────────
+// createErrorClass — optional status
+// ──────────────────────────────────────────────
+
+// status omitted — instances have no `status` property; everything else inferred
+const NoStatus = createErrorClass({
+  code: "NO_STATUS",
+  message: "Something failed",
+});
+const ns = new NoStatus();
+expectType<"NO_STATUS">(ns.code);
+expectType<"NoStatus">(ns.name);
+expectType<string>(ns.message);
+expectAssignable<Error>(ns);
+// No `status` property at all — reading it is a compile-time error
+expectError(ns.status);
+new NoStatus("Custom message");
+new NoStatus({ cause: new Error() });
+
+// status omitted with template params — params still required and typed
+const NoStatusParam = createErrorClass({
+  code: "NO_STATUS_PARAM",
+  message: "Resource {resource} not found",
+});
+const nsp = new NoStatusParam({ resource: "User" });
+expectError(nsp.status);
+expectError(new NoStatusParam());
+
+// status omitted with a function message — params inferred, no `status`
+const NoStatusFn = createErrorClass({
+  code: "NO_STATUS_FN",
+  message: (params: { resource: string }) => `Resource ${params.resource}`,
+});
+expectError(new NoStatusFn({ resource: "User" }).status);
+
+// Batch helpers — status optional per definition
+const mixedByCode = createErrorClassesByCode([
+  { code: "WITH_STATUS", message: "x", status: 500 },
+  { code: "NO_STATUS", message: "y" },
+]);
+expectType<500>(new mixedByCode.WITH_STATUS().status);
+expectError(new mixedByCode.NO_STATUS().status);
+
+const mixedByName = createErrorClassesByName([
+  { code: "WITH_STATUS", message: "x", status: 500 },
+  { code: "NO_STATUS", message: "y" },
+]);
+expectType<500>(new mixedByName.WithStatus().status);
+expectError(new mixedByName.NoStatus().status);
+
+// Created instances are assignable to the exported instance types
+expectAssignable<CustomError>(new NotFound({ resource: "User" }));
+expectAssignable<ErrorWithCode>(new NoStatus());
+expectAssignable<ErrorWithCode>(new NotFound({ resource: "User" }));
 
 // ──────────────────────────────────────────────
 // createErrorClass — without template parameters
@@ -158,9 +219,17 @@ expectError(
 
 const unknownErr: unknown = new NotFound({ resource: "test" });
 if (isCustomError(unknownErr)) {
+  expectType<CustomError>(unknownErr);
   expectType<string>(unknownErr.code);
   expectType<number>(unknownErr.status);
   expectAssignable<Error>(unknownErr);
+}
+
+const unknownErr2: unknown = new NoStatus();
+if (isErrorWithCode(unknownErr2)) {
+  expectType<ErrorWithCode>(unknownErr2);
+  expectType<string>(unknownErr2.code);
+  expectAssignable<Error>(unknownErr2);
 }
 
 // ──────────────────────────────────────────────

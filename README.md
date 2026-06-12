@@ -62,6 +62,23 @@ const ValidationError = createErrorClass({
 });
 ```
 
+`status` is optional. Omit it for errors that don't map to an HTTP status — the
+instance then has no `status` property at all (reading `.status` is a
+compile-time error, and `"status" in err` is `false` at runtime):
+
+```typescript
+const ConfigError = createErrorClass({
+  code: "CONFIG_ERROR",
+  message: "Invalid config",
+});
+
+const err = new ConfigError();
+err.status; // ❌ compile error — no such property
+```
+
+To recognise errors regardless of status, use the looser
+[`isErrorWithCode`](#iserrorwithcodeerror) guard, which checks only `code`.
+
 ### `createErrorClassesByCode(definitions)`
 
 Creates multiple error classes at once, returned as an object keyed by code.
@@ -103,8 +120,18 @@ throw new errors.Unauthorized();
 
 ### `isCustomError(error)`
 
-Type guard to check if an error is an instance of any error class created by
-this module.
+Type guard for errors created by this module that carry a numeric `status`.
+Narrows to the exported `CustomError` type. Duck-typed on `code` + `status`, so
+it also matches manually augmented errors with those properties.
+
+### `isErrorWithCode(error)`
+
+A looser alternative to `isCustomError` when you only want to check against
+`error.code`. Narrows to the exported `ErrorWithCode` type. It checks `code`
+alone and ignores `status`, so it matches every error this module creates (with
+or without a status) as well as unrelated errors that carry a string `code`,
+such as Node's system errors (`ENOENT`, etc.). Narrow further on `error.code`
+when you need to be specific.
 
 ## Constructor signatures
 
@@ -206,7 +233,7 @@ const err = new NotFound({ resource: "User" });
 err.message; // "Resource User not found"
 err.name; // "NotFound"
 err.code; // "NOT_FOUND"
-err.status; // 404
+err.status; // 404 (the property is absent if the definition omits `status`)
 err.stack; // stack trace pointing at the throw site
 err.cause; // underlying error, if provided
 ```

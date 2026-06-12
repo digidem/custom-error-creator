@@ -28,11 +28,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gmaclennan/custom-error-creator.git"
+    "url": "git+https://github.com/digidem/custom-error-creator.git"
   },
   "types": "./index.d.ts",
   "bugs": {
-    "url": "https://github.com/gmaclennan/custom-error-creator/issues"
+    "url": "https://github.com/digidem/custom-error-creator/issues"
   },
-  "homepage": "https://github.com/gmaclennan/custom-error-creator#readme"
+  "homepage": "https://github.com/digidem/custom-error-creator#readme"
 }
