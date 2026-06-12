@@ -847,6 +847,25 @@ describe("createErrorClass", () => {
       assert.equal(err.message, "Access denied");
     });
 
+    it("supports a defaulted (optional) param — constructible with and without params", () => {
+      const DocError = createErrorClass({
+        code: "DOC_ERROR",
+        message: ({ docType } = {}) =>
+          docType ? `${docType} error` : "other error message",
+        status: 400,
+      });
+      assert.equal(new DocError().message, "other error message");
+      assert.equal(new DocError({}).message, "other error message");
+      assert.equal(new DocError({ docType: "observation" }).message, "observation error");
+      const cause = new Error("root");
+      const withCause = new DocError({ docType: "observation" }, { cause });
+      assert.equal(withCause.message, "observation error");
+      assert.equal(withCause.cause, cause);
+      const causeOnly = new DocError({ cause });
+      assert.equal(causeOnly.message, "other error message");
+      assert.equal(causeOnly.cause, cause);
+    });
+
     it("accepts { cause } as first arg for a zero-arg function message", () => {
       const Unauthorized = createErrorClass({
         code: "UNAUTHORIZED",
