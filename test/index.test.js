@@ -846,13 +846,14 @@ describe("createErrorClass", () => {
       assert.equal(err.message, "Widget is gone");
     });
 
-    it("does not throw on a function message at runtime (cause reservation is compile-time only)", () => {
+    it("does not throw on a function message using cause at runtime (cause reservation is compile-time only)", () => {
       // A `cause` param is rejected by the type checker, but function param
-      // types are erased at runtime so there is nothing to validate here.
+      // types are erased at runtime — unlike a `{cause}` string template, which
+      // throws at definition time, this has nothing to validate.
       assert.doesNotThrow(() =>
         createErrorClass({
           code: "WRAP",
-          message: (params) => `Failed because ${params.reason}`,
+          message: (params) => `Failed because ${params.cause}`,
           status: 500,
         }),
       );

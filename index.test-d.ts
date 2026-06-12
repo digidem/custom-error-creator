@@ -411,6 +411,27 @@ expectError(
     status: 500,
   }),
 );
+expectError(
+  createErrorClass({
+    code: "NAMED",
+    message: (s: Array<unknown>) => `Name ${s}`,
+    status: 500,
+  }),
+);
+expectError(
+  createErrorClass({
+    code: "NAMED",
+    message: (s: boolean) => `Name ${s}`,
+    status: 500,
+  }),
+);
+expectError(
+  createErrorClass({
+    code: "NAMED",
+    message: (s: () => void) => `Name ${s}`,
+    status: 500,
+  }),
+);
 
 // Function messages through batch helpers
 const fnByCode = createErrorClassesByCode([
